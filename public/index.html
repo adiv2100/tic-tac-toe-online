@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>איקס-עיגול אונליין</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <h1>איקס-עיגול אונליין (2 שחקנים)</h1>
+
+  <section class="panel">
+    <input id="name" placeholder="שם" maxlength="20" />
+    <input id="room" placeholder="קוד חדר" maxlength="10" />
+
+    <div class="row">
+      <button id="btnCreate">צור משחק (לינק)</button>
+      <button id="btnJoin">התחבר</button>
+      <button id="btnCopyLink" disabled>העתק לינק</button>
+      <button id="btnReset" disabled>איפוס</button>
+    </div>
+
+    <div id="status"></div>
+  </section>
+
+  <main class="board" id="board"></main>
+
+  <script src="client.js"></script>
+</body>
+</html>

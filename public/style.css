@@ -1,0 +1,21 @@
+body { font-family: system-ui, Arial; margin: 20px; }
+.panel { display: grid; gap: 10px; max-width: 520px; margin-bottom: 16px; }
+#status { background: #f3f3f3; padding: 10px; border-radius: 10px; min-height: 44px; }
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(3, 110px);
+  grid-template-rows: repeat(3, 110px);
+  gap: 10px;
+}
+
+.cell {
+  width: 110px; height: 110px;
+  display: grid; place-items: center;
+  font-size: 54px;
+  border: 2px solid #222;
+  border-radius: 14px;
+  cursor: pointer;
+  user-select: none;
+}
+.cell.disabled { opacity: 0.6; cursor: not-allowed; }
