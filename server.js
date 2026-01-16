@@ -194,19 +194,30 @@ wss.on("connection", (ws) => {
 
     // RESET
     if (msg.type === "reset") {
-      const roomCode = String(msg.roomCode || "").trim().toUpperCase();
-      const room = rooms.get(roomCode);
-      if (!room) return;
-      if (!room.players.has(ws)) return;
+        const roomCode = String(msg.roomCode || "").trim().toUpperCase();
+        const room = rooms.get(roomCode);
+        if (!room) return;
+        if (!room.players.has(ws)) return;
 
-      room.board = makeEmptyBoard();
-      room.turn = "X";
-      room.winner = null;
+        // מאפס לוח
+        room.board = makeEmptyBoard();
+        room.winner = null;
 
-      broadcast(roomCode, { type: "info", message: "המשחק אופס" });
-      broadcast(roomCode, roomState(roomCode));
-      return;
-    }
+        // מחליף תפקידים בין שני השחקנים (X<->O) אם יש שניים
+        if (room.players.size === 2) {
+            for (const p of room.players.values()) {
+            p.symbol = (p.symbol === "X") ? "O" : "X";
+            }
+        }
+
+        // X תמיד מתחיל, אבל מכיוון שהחלפנו סמלים - בפועל מי שמתחיל מתחלף
+        room.turn = "X";
+
+        broadcast(roomCode, { type: "info", message: "המשחק אופס + הוחלפו תפקידים" });
+        broadcast(roomCode, roomState(roomCode));
+        return;
+        }
+
   });
 
   ws.on("close", () => cleanupSocket(ws));

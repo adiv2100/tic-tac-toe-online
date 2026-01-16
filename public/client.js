@@ -190,10 +190,16 @@ function connect() {
     }
 
     if (msg.type === "state") {
-      state = msg;
-      render();
-      return;
-    }
+        state = msg;
+
+        // ✅ עדכן את הסימן שלך לפי ה-state (חשוב במיוחד אחרי reset שמחליף תפקידים)
+        const me = state.players.find(p => p.id === myId);
+        if (me) mySymbol = me.symbol;
+
+        render();
+        return;
+        }
+
 
     // msg.type === "info" - אפשר להתעלם או להדפיס לקונסול
     // console.log(msg.message);
