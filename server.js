@@ -77,6 +77,12 @@ function cleanupSocket(ws) {
         rooms.delete(code);
         continue;
       }
+      // אם נשאר שחקן אחד - תמיד ננרמל אותו ל-X כדי למנוע O+O
+      if (room.players.size === 1) {
+        const onlyWs = [...room.players.keys()][0];
+        const onlyPlayer = room.players.get(onlyWs);
+        if (onlyPlayer) onlyPlayer.symbol = "X";
+      }
 
       room.board = makeEmptyBoard();
       room.turn = "X";
@@ -137,14 +143,10 @@ wss.on("connection", (ws) => {
 
       let room = rooms.get(roomCode);
       if (!room) {
-        room = {
-          players: new Map(),
-          board: makeEmptyBoard(),
-          turn: "X",
-          winner: null
-        };
-        rooms.set(roomCode, room);
+        ws.send(JSON.stringify({ type: "error", message: "חדר לא קיים" }));
+        return;
       }
+
 
       if (room.players.size >= 2) {
         ws.send(JSON.stringify({ type: "error", message: "החדר מלא (2 שחקנים)" }));
@@ -152,7 +154,11 @@ wss.on("connection", (ws) => {
       }
 
       const id = makePlayerId();
-      const symbol = room.players.size === 0 ? "X" : "O";
+      let symbol = "X";
+      if (room.players.size === 1) {
+        const existing = [...room.players.values()][0];
+        symbol = (existing.symbol === "X") ? "O" : "X";
+      }
       room.players.set(ws, { id, name, symbol });
 
       ws.send(JSON.stringify({ type: "joined", id, roomCode, symbol }));
