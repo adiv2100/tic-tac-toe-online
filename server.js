@@ -27,12 +27,12 @@ function checkWinner(b) {
   return null;
 }
 
-function broadcast(roomCode, payload) {
+function broadcast(roomCode, payload, excludeWs = null) {
   const room = rooms.get(roomCode);
   if (!room) return;
   const msg = JSON.stringify(payload);
   for (const ws of room.players.keys()) {
-    if (ws.readyState === WebSocket.OPEN) ws.send(msg);
+    if (ws !== excludeWs && ws.readyState === WebSocket.OPEN) ws.send(msg);
   }
 }
 
@@ -52,7 +52,8 @@ function roomState(roomCode) {
     players,
     board: room.board,
     turn: room.turn,
-    winner: room.winner
+    winner: room.winner,
+    chat: room.chat || []
   };
 }
 
@@ -77,7 +78,8 @@ function cleanupSocket(ws) {
         rooms.delete(code);
         continue;
       }
-      // אם נשאר שחקן אחד - תמיד ננרמל אותו ל-X כדי למנוע O+O
+      
+      // אם נשאר שחקן אחד - תמיד ננרמל אותו ל-X
       if (room.players.size === 1) {
         const onlyWs = [...room.players.keys()][0];
         const onlyPlayer = room.players.get(onlyWs);
@@ -87,11 +89,38 @@ function cleanupSocket(ws) {
       room.board = makeEmptyBoard();
       room.turn = "X";
       room.winner = null;
+      
+      // הודעת צ'אט מערכת על התנתקות
+      addChatMessage(code, null, `שחקן התנתק (${leaver?.name || ""})`, "system");
 
-      broadcast(code, { type: "info", message: `שחקן התנתק (${leaver?.name || ""}). המשחק אופס.` });
       broadcast(code, roomState(code));
     }
   }
+}
+
+function addChatMessage(roomCode, sender, text, type = "user") {
+  const room = rooms.get(roomCode);
+  if (!room) return;
+  
+  if (!room.chat) room.chat = [];
+  
+  const message = {
+    id: Date.now() + Math.random(),
+    sender: sender ? { id: sender.id, name: sender.name } : null,
+    text: text.slice(0, 300), // הגבלת אורך
+    timestamp: Date.now(),
+    type
+  };
+  
+  room.chat.push(message);
+  
+  // שמירה רק על 50 הודעות אחרונות
+  if (room.chat.length > 50) {
+    room.chat = room.chat.slice(-50);
+  }
+  
+  broadcast(roomCode, { type: "chat", message });
+  return message;
 }
 
 wss.on("connection", (ws) => {
@@ -118,7 +147,8 @@ wss.on("connection", (ws) => {
         players: new Map(),
         board: makeEmptyBoard(),
         turn: "X",
-        winner: null
+        winner: null,
+        chat: []
       };
       rooms.set(roomCode, room);
 
@@ -126,7 +156,11 @@ wss.on("connection", (ws) => {
       room.players.set(ws, { id, name, symbol: "X" });
 
       ws.send(JSON.stringify({ type: "joined", id, roomCode, symbol: "X" }));
-      broadcast(roomCode, { type: "info", message: `${name} הצטרף (X)` });
+      
+      // הודעת מערכת
+      addChatMessage(roomCode, null, `${name} יצר את החדר`, "system");
+      addChatMessage(roomCode, null, "ברוכים הבאים! אפשר לדבר בצ'אט", "system");
+      
       broadcast(roomCode, roomState(roomCode));
       return;
     }
@@ -147,7 +181,6 @@ wss.on("connection", (ws) => {
         return;
       }
 
-
       if (room.players.size >= 2) {
         ws.send(JSON.stringify({ type: "error", message: "החדר מלא (2 שחקנים)" }));
         return;
@@ -162,7 +195,10 @@ wss.on("connection", (ws) => {
       room.players.set(ws, { id, name, symbol });
 
       ws.send(JSON.stringify({ type: "joined", id, roomCode, symbol }));
-      broadcast(roomCode, { type: "info", message: `${name} הצטרף (${symbol})` });
+      
+      // הודעת מערכת על הצטרפות
+      addChatMessage(roomCode, null, `${name} הצטרף (${symbol})`, "system");
+      
       broadcast(roomCode, roomState(roomCode));
       return;
     }
@@ -191,8 +227,16 @@ wss.on("connection", (ws) => {
       room.board[index] = player.symbol;
 
       const w = checkWinner(room.board);
-      if (w) room.winner = w;
-      else room.turn = room.turn === "X" ? "O" : "X";
+      if (w) {
+        room.winner = w;
+        if (w !== "DRAW") {
+          addChatMessage(roomCode, null, `${player.name} (${w}) ניצח! 🏆`, "system");
+        } else {
+          addChatMessage(roomCode, null, `תיקו! 🤝`, "system");
+        }
+      } else {
+        room.turn = room.turn === "X" ? "O" : "X";
+      }
 
       broadcast(roomCode, roomState(roomCode));
       return;
@@ -205,25 +249,53 @@ wss.on("connection", (ws) => {
         if (!room) return;
         if (!room.players.has(ws)) return;
 
-        // מאפס לוח
+        const player = room.players.get(ws);
+        
         room.board = makeEmptyBoard();
         room.winner = null;
 
-        // מחליף תפקידים בין שני השחקנים (X<->O) אם יש שניים
         if (room.players.size === 2) {
             for (const p of room.players.values()) {
             p.symbol = (p.symbol === "X") ? "O" : "X";
             }
         }
 
-        // X תמיד מתחיל, אבל מכיוון שהחלפנו סמלים - בפועל מי שמתחיל מתחלף
         room.turn = "X";
+        
+        addChatMessage(roomCode, null, `${player?.name} איפס את המשחק - הוחלפו תפקידים`, "system");
 
-        broadcast(roomCode, { type: "info", message: "המשחק אופס + הוחלפו תפקידים" });
         broadcast(roomCode, roomState(roomCode));
         return;
-        }
-
+    }
+    
+    // CHAT MESSAGE
+    if (msg.type === "chat") {
+      const roomCode = String(msg.roomCode || "").trim().toUpperCase();
+      const room = rooms.get(roomCode);
+      if (!room) return;
+      
+      const player = room.players.get(ws);
+      if (!player) return;
+      
+      const text = String(msg.text || "").trim();
+      if (!text) return;
+      
+      addChatMessage(roomCode, player, text, "user");
+      return;
+    }
+    
+    // GET CHAT HISTORY
+    if (msg.type === "get_chat") {
+      const roomCode = String(msg.roomCode || "").trim().toUpperCase();
+      const room = rooms.get(roomCode);
+      if (!room) return;
+      if (!room.players.has(ws)) return;
+      
+      ws.send(JSON.stringify({
+        type: "chat_history",
+        messages: room.chat || []
+      }));
+    }
   });
 
   ws.on("close", () => cleanupSocket(ws));
