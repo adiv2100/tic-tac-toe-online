@@ -23,7 +23,7 @@ let state = {
   turn: "X",
   winner: null,
   players: [],
-  chat: []
+  chat: [] // חשוב! לאתחל את הצ'אט
 };
 
 // פונקציות צ'אט
@@ -31,12 +31,14 @@ function renderChat() {
   if (!elChatMessages) return;
   
   elChatMessages.innerHTML = "";
+  
+  // וידוא שיש מערך צ'אט
   const messages = state.chat || [];
   
   if (messages.length === 0) {
     const emptyDiv = document.createElement("div");
     emptyDiv.className = "chat-message system";
-    emptyDiv.textContent = "אין הודעות. התחל לדבר!";
+    emptyDiv.textContent = "💬 אין הודעות. התחל לדבר!";
     elChatMessages.appendChild(emptyDiv);
     return;
   }
@@ -53,20 +55,15 @@ function renderChat() {
     if (msg.type === "system") {
       div.textContent = msg.text;
     } else {
-      const senderSpan = document.createElement("span");
-      senderSpan.className = "sender";
-      senderSpan.textContent = msg.sender?.name || "שחקן";
-      
-      const timeSpan = document.createElement("span");
-      timeSpan.className = "time";
-      timeSpan.textContent = time;
+      const headerSpan = document.createElement("span");
+      headerSpan.className = "sender";
+      headerSpan.textContent = `${msg.sender?.name || "שחקן"} • ${time}`;
       
       const textDiv = document.createElement("div");
       textDiv.className = "text";
       textDiv.textContent = msg.text;
       
-      div.appendChild(timeSpan);
-      div.appendChild(senderSpan);
+      div.appendChild(headerSpan);
       div.appendChild(textDiv);
     }
     
@@ -276,8 +273,11 @@ function connect() {
 
       updateUrlRoom(roomCode);
       
+      // איפוס הצ'אט לפני בקשת היסטוריה
+      state.chat = [];
+      
       // בקש היסטוריית צ'אט
-      setTimeout(() => requestChatHistory(), 100);
+      setTimeout(() => requestChatHistory(), 200);
       
       render();
       return;
@@ -285,6 +285,9 @@ function connect() {
 
     if (msg.type === "state") {
         state = msg;
+        
+        // וידוא שיש מערך צ'אט
+        if (!state.chat) state.chat = [];
 
         const me = state.players.find(p => p.id === myId);
         if (me) mySymbol = me.symbol;
@@ -294,22 +297,27 @@ function connect() {
     }
     
     if (msg.type === "chat") {
-      if (!state.chat) state.chat = [];
-      state.chat.push(msg.message);
-      
-      // שמירה על 50 הודעות אחרונות
-      if (state.chat.length > 50) {
-        state.chat = state.chat.slice(-50);
-      }
-      
-      renderChat();
-      return;
+        if (!state.chat) state.chat = [];
+        
+        // מוסיף רק אם זו הודעה חדשה (מניעת כפילויות)
+        const exists = state.chat.some(m => m.id === msg.message.id);
+        if (!exists) {
+            state.chat.push(msg.message);
+            
+            // שמירה על 50 הודעות אחרונות
+            if (state.chat.length > 50) {
+                state.chat = state.chat.slice(-50);
+            }
+        }
+        
+        renderChat();
+        return;
     }
     
     if (msg.type === "chat_history") {
-      state.chat = msg.messages || [];
-      renderChat();
-      return;
+        state.chat = msg.messages || [];
+        renderChat();
+        return;
     }
   };
 }

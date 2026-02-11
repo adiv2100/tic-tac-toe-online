@@ -53,7 +53,7 @@ function roomState(roomCode) {
     board: room.board,
     turn: room.turn,
     winner: room.winner,
-    chat: room.chat || []
+    chat: room.chat || [] // חשוב! שומר את הצ'אט ב-state
   };
 }
 
@@ -79,7 +79,6 @@ function cleanupSocket(ws) {
         continue;
       }
       
-      // אם נשאר שחקן אחד - תמיד ננרמל אותו ל-X
       if (room.players.size === 1) {
         const onlyWs = [...room.players.keys()][0];
         const onlyPlayer = room.players.get(onlyWs);
@@ -90,7 +89,6 @@ function cleanupSocket(ws) {
       room.turn = "X";
       room.winner = null;
       
-      // הודעת צ'אט מערכת על התנתקות
       addChatMessage(code, null, `שחקן התנתק (${leaver?.name || ""})`, "system");
 
       broadcast(code, roomState(code));
@@ -100,26 +98,30 @@ function cleanupSocket(ws) {
 
 function addChatMessage(roomCode, sender, text, type = "user") {
   const room = rooms.get(roomCode);
-  if (!room) return;
+  if (!room) return null;
   
   if (!room.chat) room.chat = [];
   
   const message = {
     id: Date.now() + Math.random(),
     sender: sender ? { id: sender.id, name: sender.name } : null,
-    text: text.slice(0, 300), // הגבלת אורך
+    text: text.slice(0, 300),
     timestamp: Date.now(),
     type
   };
   
   room.chat.push(message);
   
-  // שמירה רק על 50 הודעות אחרונות
   if (room.chat.length > 50) {
     room.chat = room.chat.slice(-50);
   }
   
+  // שידור הודעת הצ'אט
   broadcast(roomCode, { type: "chat", message });
+  
+  // חשוב! גם שולחים state מעודכן עם הצ'אט החדש
+  broadcast(roomCode, roomState(roomCode));
+  
   return message;
 }
 
@@ -157,7 +159,6 @@ wss.on("connection", (ws) => {
 
       ws.send(JSON.stringify({ type: "joined", id, roomCode, symbol: "X" }));
       
-      // הודעת מערכת
       addChatMessage(roomCode, null, `${name} יצר את החדר`, "system");
       addChatMessage(roomCode, null, "ברוכים הבאים! אפשר לדבר בצ'אט", "system");
       
@@ -196,7 +197,6 @@ wss.on("connection", (ws) => {
 
       ws.send(JSON.stringify({ type: "joined", id, roomCode, symbol }));
       
-      // הודעת מערכת על הצטרפות
       addChatMessage(roomCode, null, `${name} הצטרף (${symbol})`, "system");
       
       broadcast(roomCode, roomState(roomCode));
