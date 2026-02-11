@@ -8,6 +8,11 @@ const btnJoin = document.getElementById("btnJoin");
 const btnCopyLink = document.getElementById("btnCopyLink");
 const btnReset = document.getElementById("btnReset");
 
+// אלמנטי צ'אט
+const elChatMessages = document.getElementById("chatMessages");
+const elChatInput = document.getElementById("chatInput");
+const btnSendChat = document.getElementById("btnSendChat");
+
 let ws = null;
 let myId = null;
 let mySymbol = null;
@@ -17,11 +22,93 @@ let state = {
   board: Array(9).fill(""),
   turn: "X",
   winner: null,
-  players: []
+  players: [],
+  chat: []
 };
 
+// פונקציות צ'אט
+function renderChat() {
+  if (!elChatMessages) return;
+  
+  elChatMessages.innerHTML = "";
+  const messages = state.chat || [];
+  
+  if (messages.length === 0) {
+    const emptyDiv = document.createElement("div");
+    emptyDiv.className = "chat-message system";
+    emptyDiv.textContent = "אין הודעות. התחל לדבר!";
+    elChatMessages.appendChild(emptyDiv);
+    return;
+  }
+  
+  messages.forEach(msg => {
+    const div = document.createElement("div");
+    div.className = `chat-message ${msg.type || "user"}`;
+    
+    const time = new Date(msg.timestamp).toLocaleTimeString("he-IL", {
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+    
+    if (msg.type === "system") {
+      div.textContent = msg.text;
+    } else {
+      const senderSpan = document.createElement("span");
+      senderSpan.className = "sender";
+      senderSpan.textContent = msg.sender?.name || "שחקן";
+      
+      const timeSpan = document.createElement("span");
+      timeSpan.className = "time";
+      timeSpan.textContent = time;
+      
+      const textDiv = document.createElement("div");
+      textDiv.className = "text";
+      textDiv.textContent = msg.text;
+      
+      div.appendChild(timeSpan);
+      div.appendChild(senderSpan);
+      div.appendChild(textDiv);
+    }
+    
+    elChatMessages.appendChild(div);
+  });
+  
+  // גלילה אוטומטית לתחתית
+  elChatMessages.scrollTop = elChatMessages.scrollHeight;
+}
+
+function sendChatMessage() {
+  if (!elChatInput) return;
+  
+  const text = elChatInput.value.trim();
+  if (!text) return;
+  
+  if (!ws || ws.readyState !== WebSocket.OPEN || !roomCode) {
+    setStatus("לא מחובר לחדר");
+    return;
+  }
+  
+  ws.send(JSON.stringify({
+    type: "chat",
+    roomCode,
+    text
+  }));
+  
+  elChatInput.value = "";
+  elChatInput.focus();
+}
+
+function requestChatHistory() {
+  if (!ws || ws.readyState !== WebSocket.OPEN || !roomCode) return;
+  
+  ws.send(JSON.stringify({
+    type: "get_chat",
+    roomCode
+  }));
+}
+
 function setStatus(text) {
-  elStatus.textContent = text;
+  if (elStatus) elStatus.textContent = text;
 }
 
 function saveName(name) {
@@ -50,15 +137,14 @@ function isJoinViaLink() {
 }
 
 function applyJoinViaLinkUI() {
-  // אם נכנסו דרך לינק - אפשר להסתיר את שדה הקוד כדי לא לבלבל
-  if (isJoinViaLink()) {
+  if (isJoinViaLink() && elRoom) {
     elRoom.style.display = "none";
-    // גם כפתור "התחבר" פחות רלוונטי כי כבר מתחבר אוטומטית
-    // אבל נשאיר אותו פעיל למקרה של שינוי שם ואז התחברות מחדש
   }
 }
 
 function render() {
+  if (!elBoard) return;
+  
   elBoard.innerHTML = "";
   const waiting = state.players.length < 2;
 
@@ -99,8 +185,19 @@ function render() {
   setStatus([headline, gameLine, linkLine].filter(Boolean).join("\n"));
 
   const connected = ws && ws.readyState === WebSocket.OPEN;
-  btnReset.disabled = !connected || !roomCode;
-  btnCopyLink.disabled = !roomCode;
+  if (btnReset) btnReset.disabled = !connected || !roomCode;
+  if (btnCopyLink) btnCopyLink.disabled = !roomCode;
+  
+  // עדכון צ'אט
+  renderChat();
+  
+  // הפעלת כפתור שליחת צ'אט
+  if (btnSendChat) {
+    btnSendChat.disabled = !connected || !roomCode;
+  }
+  if (elChatInput) {
+    elChatInput.disabled = !connected || !roomCode;
+  }
 }
 
 function joinRoom(code, name) {
@@ -134,34 +231,30 @@ function connect() {
   ws = new WebSocket(`${proto}://${location.host}`);
 
   ws.onopen = () => {
-  // ✅ כניסה אוטומטית מהלינק: ?room=XXXX
-  const params = new URLSearchParams(location.search);
-  const linkRoom = (params.get("room") || "").trim().toUpperCase();
+    const params = new URLSearchParams(location.search);
+    const linkRoom = (params.get("room") || "").trim().toUpperCase();
 
-  if (linkRoom) {
-    elRoom.value = linkRoom;
+    if (linkRoom) {
+      if (elRoom) elRoom.value = linkRoom;
 
-    // ננסה שם שמור
-    let name = (loadName() || "").trim();
+      let name = (loadName() || "").trim();
 
-    // אם אין שם שמור – נבקש מהמשתמש
-    if (!name) {
-      name = prompt("מה השם שלך?");
       if (!name) {
-        setStatus("לא התחברת — לא הוזן שם");
-        return;
+        name = prompt("מה השם שלך?");
+        if (!name) {
+          setStatus("לא התחברת — לא הוזן שם");
+          return;
+        }
+        name = name.trim().slice(0, 20);
+        saveName(name);
       }
-      name = name.trim().slice(0, 20);
-      saveName(name);
+
+      setStatus(`מתחבר לחדר ${linkRoom}…`);
+      joinRoom(linkRoom, name);
+    } else {
+      setStatus("מחובר לשרת. צור משחק או התחבר לחדר…");
     }
-
-    setStatus(`מתחבר לחדר ${linkRoom}…`);
-    joinRoom(linkRoom, name);
-  } else {
-    setStatus("מחובר לשרת. צור משחק או התחבר לחדר…");
-  }
-};
-
+  };
 
   ws.onclose = () => setStatus("נותק. רענן/נסה שוב.");
   ws.onerror = () => setStatus("שגיאת תקשורת.");
@@ -179,12 +272,13 @@ function connect() {
       mySymbol = msg.symbol;
       roomCode = msg.roomCode;
 
-      // מציג קוד בחדר (למי שנכנס רגיל)
-      elRoom.value = roomCode;
+      if (elRoom) elRoom.value = roomCode;
 
-      // ✅ מעדכן URL כך שהלינק תמיד כולל room
       updateUrlRoom(roomCode);
-
+      
+      // בקש היסטוריית צ'אט
+      setTimeout(() => requestChatHistory(), 100);
+      
       render();
       return;
     }
@@ -192,65 +286,101 @@ function connect() {
     if (msg.type === "state") {
         state = msg;
 
-        // ✅ עדכן את הסימן שלך לפי ה-state (חשוב במיוחד אחרי reset שמחליף תפקידים)
         const me = state.players.find(p => p.id === myId);
         if (me) mySymbol = me.symbol;
 
         render();
         return;
-        }
-
-
-    // msg.type === "info" - אפשר להתעלם או להדפיס לקונסול
-    // console.log(msg.message);
+    }
+    
+    if (msg.type === "chat") {
+      if (!state.chat) state.chat = [];
+      state.chat.push(msg.message);
+      
+      // שמירה על 50 הודעות אחרונות
+      if (state.chat.length > 50) {
+        state.chat = state.chat.slice(-50);
+      }
+      
+      renderChat();
+      return;
+    }
+    
+    if (msg.type === "chat_history") {
+      state.chat = msg.messages || [];
+      renderChat();
+      return;
+    }
   };
 }
 
-// --- Events ---
-btnCreate.addEventListener("click", () => {
-  const name = elName.value.trim();
+// אירועים
+if (btnCreate) {
+  btnCreate.addEventListener("click", () => {
+    const name = elName.value.trim();
 
-  if (!name) {
-    setStatus("נא להזין שם לפני יצירת משחק");
-    elName.focus();
-    return;
-  }
+    if (!name) {
+      setStatus("נא להזין שם לפני יצירת משחק");
+      elName.focus();
+      return;
+    }
 
-  createRoom(name);
-});
+    createRoom(name);
+  });
+}
 
+if (btnJoin) {
+  btnJoin.addEventListener("click", () => {
+    const name = elName.value.trim() || "שחקן";
+    const code = elRoom.value.trim().toUpperCase();
+    joinRoom(code, name);
+  });
+}
 
-btnJoin.addEventListener("click", () => {
-  const name = elName.value.trim() || "שחקן";
-  const code = elRoom.value.trim().toUpperCase();
-  joinRoom(code, name);
-});
+if (btnCopyLink) {
+  btnCopyLink.addEventListener("click", async () => {
+    if (!roomCode) return;
+    const link = buildShareLink(roomCode);
 
-btnCopyLink.addEventListener("click", async () => {
-  if (!roomCode) return;
-  const link = buildShareLink(roomCode);
+    try {
+      await navigator.clipboard.writeText(link);
+      setStatus(`לינק הועתק ✅\n${link}`);
+    } catch {
+      prompt("העתק את הלינק:", link);
+    }
+  });
+}
 
-  try {
-    await navigator.clipboard.writeText(link);
-    setStatus(`לינק הועתק ✅\n${link}`);
-  } catch {
-    // fallback אם clipboard חסום
-    prompt("העתק את הלינק:", link);
-  }
-});
+if (btnReset) {
+  btnReset.addEventListener("click", () => {
+    if (!ws || ws.readyState !== WebSocket.OPEN || !roomCode) return;
+    ws.send(JSON.stringify({ type: "reset", roomCode }));
+  });
+}
 
-btnReset.addEventListener("click", () => {
-  if (!ws || ws.readyState !== WebSocket.OPEN || !roomCode) return;
-  ws.send(JSON.stringify({ type: "reset", roomCode }));
-});
+// אירועי צ'אט
+if (btnSendChat) {
+  btnSendChat.addEventListener("click", sendChatMessage);
+}
+
+if (elChatInput) {
+  elChatInput.addEventListener("keypress", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      sendChatMessage();
+    }
+  });
+}
 
 // טען שם אחרון
-elName.value = loadName();
+if (elName) {
+  elName.value = loadName();
+}
 
-// אם יש room בלינק, נשים אותו בשדה (גם אם אחר כך מסתירים אותו)
+// אם יש room בלינק, נשים אותו בשדה
 const params = new URLSearchParams(location.search);
 const linkRoom = (params.get("room") || "").trim().toUpperCase();
-if (linkRoom) elRoom.value = linkRoom;
+if (linkRoom && elRoom) elRoom.value = linkRoom;
 
 applyJoinViaLinkUI();
 

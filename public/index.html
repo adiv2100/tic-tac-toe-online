@@ -2,47 +2,66 @@
 <html lang="he" dir="rtl">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>איקס-עיגול אונליין</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=yes" />
+  <title>איקס-עיגול אונליין עם צ'אט</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <h1>איקס-עיגול אונליין (2 שחקנים)</h1>
+  <div class="container">
+    <div class="game-area">
+      <h1>🎮 איקס-עיגול אונליין</h1>
 
-  <section class="panel">
-    <input id="name" placeholder="שם" maxlength="20" />
-    <input id="room" placeholder="קוד חדר" maxlength="10" />
+      <section class="panel">
+        <input id="name" placeholder="שם" maxlength="20" />
+        <input id="room" placeholder="קוד חדר" maxlength="10" />
 
-    <div class="row">
-      <button id="btnCreate">צור משחק (לינק)</button>
-      <button id="btnJoin">התחבר</button>
-      <button id="btnCopyLink" disabled>העתק לינק</button>
-      <button id="btnReset" disabled>איפוס</button>
+        <div class="row">
+          <button id="btnCreate">➕ צור משחק</button>
+          <button id="btnJoin">🔗 התחבר</button>
+          <button id="btnCopyLink" disabled>📋 העתק לינק</button>
+          <button id="btnReset" disabled>🔄 איפוס</button>
+        </div>
+
+        <div id="status"></div>
+      </section>
+
+      <main class="board" id="board"></main>
     </div>
-
-    <div id="status"></div>
-  </section>
-
-  <main class="board" id="board"></main>
+    
+    <div class="chat-area">
+      <h3>💬 צ'אט</h3>
+      <div id="chatMessages" class="chat-messages"></div>
+      <div class="chat-input-area">
+        <input 
+          type="text" 
+          id="chatInput" 
+          placeholder="כתוב הודעה..." 
+          maxlength="300"
+          disabled
+        />
+        <button id="btnSendChat" disabled>שלח</button>
+      </div>
+    </div>
+  </div>
 
   <script src="client.js"></script>
-  <!-- Default Statcounter code for X & O
-https://tic-tac-toe-online-production-7942.up.railway.app/
--->
-<script type="text/javascript">
-var sc_project=13198627; 
-var sc_invisible=1; 
-var sc_security="15efba3c"; 
-</script>
-<script type="text/javascript"
-src="https://www.statcounter.com/counter/counter.js"
-async></script>
-<noscript><div class="statcounter"><a title="Web Analytics
-Made Easy - Statcounter" href="https://statcounter.com/"
-target="_blank"><img class="statcounter"
-src="https://c.statcounter.com/13198627/0/15efba3c/1/"
-alt="Web Analytics Made Easy - Statcounter"
-referrerPolicy="no-referrer-when-downgrade"></a></div></noscript>
-<!-- End of Statcounter Code -->
+  
+  <!-- Statcounter -->
+  <script type="text/javascript">
+  var sc_project=13198627; 
+  var sc_invisible=1; 
+  var sc_security="15efba3c"; 
+  </script>
+  <script type="text/javascript"
+  src="https://www.statcounter.com/counter/counter.js"
+  async></script>
+  <noscript>
+    <div class="statcounter">
+      <a title="Web Analytics Made Easy - Statcounter" href="https://statcounter.com/" target="_blank">
+        <img class="statcounter" src="https://c.statcounter.com/13198627/0/15efba3c/1/" alt="Web Analytics Made Easy - Statcounter" referrerpolicy="no-referrer-when-downgrade">
+      </a>
+    </div>
+  </noscript>
+  <!-- End of Statcounter Code -->
 </body>
 </html>
