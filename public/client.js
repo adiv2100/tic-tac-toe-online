@@ -17,13 +17,14 @@ let ws = null;
 let myId = null;
 let mySymbol = null;
 let roomCode = null;
+let isConnected = false;
 
 let state = {
   board: Array(9).fill(""),
   turn: "X",
   winner: null,
   players: [],
-  chat: [] // חשוב! לאתחל את הצ'אט
+  chat: []
 };
 
 // פונקציות צ'אט
@@ -31,8 +32,6 @@ function renderChat() {
   if (!elChatMessages) return;
   
   elChatMessages.innerHTML = "";
-  
-  // וידוא שיש מערך צ'אט
   const messages = state.chat || [];
   
   if (messages.length === 0) {
@@ -70,7 +69,6 @@ function renderChat() {
     elChatMessages.appendChild(div);
   });
   
-  // גלילה אוטומטית לתחתית
   elChatMessages.scrollTop = elChatMessages.scrollHeight;
 }
 
@@ -185,10 +183,8 @@ function render() {
   if (btnReset) btnReset.disabled = !connected || !roomCode;
   if (btnCopyLink) btnCopyLink.disabled = !roomCode;
   
-  // עדכון צ'אט
   renderChat();
   
-  // הפעלת כפתור שליחת צ'אט
   if (btnSendChat) {
     btnSendChat.disabled = !connected || !roomCode;
   }
@@ -199,9 +195,14 @@ function render() {
 
 function joinRoom(code, name) {
   if (!ws || ws.readyState !== WebSocket.OPEN) {
-    setStatus("לא מחובר לשרת…");
+    setStatus("מתחבר לשרת...");
+    // אם אין חיבור, קודם נתחבר ואז ננסה שוב
+    connect(() => {
+      setTimeout(() => joinRoom(code, name), 500);
+    });
     return;
   }
+  
   const cleanCode = String(code || "").trim().toUpperCase();
   if (!cleanCode) {
     setStatus("חסר קוד חדר");
@@ -215,23 +216,49 @@ function joinRoom(code, name) {
 
 function createRoom(name) {
   if (!ws || ws.readyState !== WebSocket.OPEN) {
-    setStatus("לא מחובר לשרת…");
+    setStatus("מתחבר לשרת...");
+    // אם אין חיבור, קודם נתחבר ואז ננסה שוב
+    connect(() => {
+      setTimeout(() => createRoom(name), 500);
+    });
     return;
   }
+  
   const cleanName = String(name || "שחקן").trim().slice(0, 20) || "שחקן";
   saveName(cleanName);
   ws.send(JSON.stringify({ type: "create_room", name: cleanName }));
 }
 
-function connect() {
+function connect(callback) {
+  // אם כבר מחובר, הפעל callback מיד
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    if (callback) callback();
+    return;
+  }
+  
+  // אם יש חיבור קודם אבל הוא לא פתוח, נקה אותו
+  if (ws) {
+    try {
+      ws.close();
+    } catch (e) {}
+    ws = null;
+  }
+  
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}`);
 
   ws.onopen = () => {
+    isConnected = true;
+    setStatus("מחובר לשרת");
+    
+    // הפעל callback אם קיים
+    if (callback) callback();
+    
     const params = new URLSearchParams(location.search);
     const linkRoom = (params.get("room") || "").trim().toUpperCase();
 
-    if (linkRoom) {
+    // רק אם אין callback, נבדוק אוטומציה
+    if (!callback && linkRoom) {
       if (elRoom) elRoom.value = linkRoom;
 
       let name = (loadName() || "").trim();
@@ -248,13 +275,20 @@ function connect() {
 
       setStatus(`מתחבר לחדר ${linkRoom}…`);
       joinRoom(linkRoom, name);
-    } else {
+    } else if (!callback) {
       setStatus("מחובר לשרת. צור משחק או התחבר לחדר…");
     }
   };
 
-  ws.onclose = () => setStatus("נותק. רענן/נסה שוב.");
-  ws.onerror = () => setStatus("שגיאת תקשורת.");
+  ws.onclose = () => {
+    isConnected = false;
+    setStatus("נותק מהשרת. רענן/נסה שוב.");
+  };
+  
+  ws.onerror = (e) => {
+    console.error("WebSocket error:", e);
+    setStatus("שגיאת תקשורת עם השרת");
+  };
 
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
@@ -273,10 +307,8 @@ function connect() {
 
       updateUrlRoom(roomCode);
       
-      // איפוס הצ'אט לפני בקשת היסטוריה
       state.chat = [];
       
-      // בקש היסטוריית צ'אט
       setTimeout(() => requestChatHistory(), 200);
       
       render();
@@ -286,7 +318,6 @@ function connect() {
     if (msg.type === "state") {
         state = msg;
         
-        // וידוא שיש מערך צ'אט
         if (!state.chat) state.chat = [];
 
         const me = state.players.find(p => p.id === myId);
@@ -299,12 +330,10 @@ function connect() {
     if (msg.type === "chat") {
         if (!state.chat) state.chat = [];
         
-        // מוסיף רק אם זו הודעה חדשה (מניעת כפילויות)
         const exists = state.chat.some(m => m.id === msg.message.id);
         if (!exists) {
             state.chat.push(msg.message);
             
-            // שמירה על 50 הודעות אחרונות
             if (state.chat.length > 50) {
                 state.chat = state.chat.slice(-50);
             }
@@ -392,5 +421,7 @@ if (linkRoom && elRoom) elRoom.value = linkRoom;
 
 applyJoinViaLinkUI();
 
+// התחל חיבור
 connect();
+
 render();
