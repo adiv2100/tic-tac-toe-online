@@ -3,65 +3,85 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=yes" />
-  <title>איקס-עיגול אונליין עם צ'אט</title>
+  <title>איקס-עיגול אונליין - לובי שולחנות</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="container">
-    <div class="game-area">
-      <h1>🎮 איקס-עיגול אונליין</h1>
-
-      <section class="panel">
-        <input id="name" placeholder="שם" maxlength="20" />
-        <input id="room" placeholder="קוד חדר" maxlength="10" />
-
-        <div class="row">
-          <button id="btnCreate">➕ צור משחק</button>
-          <button id="btnJoin">🔗 התחבר</button>
-          <button id="btnCopyLink" disabled>📋 העתק לינק</button>
-          <button id="btnReset" disabled>🔄 איפוס</button>
-        </div>
-
-        <div id="status"></div>
-      </section>
-
-      <main class="board" id="board"></main>
+  <div class="app-container">
+    <!-- תצוגת לובי -->
+    <div id="lobbySection" class="lobby-section">
+      <div class="lobby-header">
+        <h1>🎮 לובי איקס-עיגול</h1>
+        <button id="backToGameBtn" style="display: none;">🎯 חזור למשחק</button>
+        <button id="createTableBtn">➕ צור שולחן חדש</button>
+      </div>
+      <div class="lobby-controls">
+        <input type="text" id="name" placeholder="השם שלך (אופציונלי)" maxlength="20" />
+      </div>
+      <div id="lobbyView" class="lobby-tables"></div>
+      <div class="join-by-code">
+        <hr />
+        <input type="text" id="room" placeholder="או הזן קוד חדר" maxlength="10" />
+        <button id="btnJoin">🔗 התחבר לחדר בקוד</button>
+      </div>
     </div>
-    
-    <div class="chat-area">
-      <h3>💬 צ'אט</h3>
-      <div id="chatMessages" class="chat-messages"></div>
-      <div class="chat-input-area">
-        <input 
-          type="text" 
-          id="chatInput" 
-          placeholder="כתוב הודעה..." 
-          maxlength="300"
-          disabled
-        />
-        <button id="btnSendChat" disabled>שלח</button>
+
+    <!-- תצוגת משחק -->
+    <div id="gameSection" class="game-section" style="display: none;">
+      <div class="game-header">
+        <button id="backToLobbyBtn">🏠 חזור ללובי</button>
+        <h1>🎮 איקס-עיגול</h1>
+        <button id="btnCopyLink" disabled>📋 העתק לינק</button>
+      </div>
+      <div class="game-container">
+        <div class="game-area">
+          <div class="panel">
+            <div class="row">
+              <button id="btnReset" disabled>🔄 איפוס משחק</button>
+            </div>
+            <div id="status"></div>
+          </div>
+          <div class="board" id="board"></div>
+        </div>
+        <div class="chat-area">
+          <h3>💬 צ'אט</h3>
+          <div id="chatMessages" class="chat-messages"></div>
+          <div class="chat-input-area">
+            <input type="text" id="chatInput" placeholder="כתוב הודעה..." maxlength="300" disabled />
+            <button id="btnSendChat" disabled>שלח</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal ליצירת שולחן -->
+  <div id="createTableModal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <h3>צור שולחן חדש</h3>
+      <input type="text" id="modalTableName" placeholder="שם השולחן (אופציונלי)" maxlength="30" />
+      <div class="modal-buttons">
+        <button id="modalCreateConfirm">✅ צור</button>
+        <button id="modalCancel">❌ ביטול</button>
       </div>
     </div>
   </div>
 
   <script src="client.js"></script>
-  
+
   <!-- Statcounter -->
   <script type="text/javascript">
-  var sc_project=13198627; 
-  var sc_invisible=1; 
-  var sc_security="15efba3c"; 
+    var sc_project = 13198627;
+    var sc_invisible = 1;
+    var sc_security = "15efba3c";
   </script>
-  <script type="text/javascript"
-  src="https://www.statcounter.com/counter/counter.js"
-  async></script>
+  <script type="text/javascript" src="https://www.statcounter.com/counter/counter.js" async></script>
   <noscript>
     <div class="statcounter">
-      <a title="Web Analytics Made Easy - Statcounter" href="https://statcounter.com/" target="_blank">
-        <img class="statcounter" src="https://c.statcounter.com/13198627/0/15efba3c/1/" alt="Web Analytics Made Easy - Statcounter" referrerpolicy="no-referrer-when-downgrade">
+      <a title="Web Analytics" href="https://statcounter.com/" target="_blank">
+        <img class="statcounter" src="https://c.statcounter.com/13198627/0/15efba3c/1/" alt="" referrerpolicy="no-referrer-when-downgrade">
       </a>
     </div>
   </noscript>
-  <!-- End of Statcounter Code -->
 </body>
 </html>
