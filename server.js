@@ -185,10 +185,10 @@ wss.on("connection", (ws) => {
       const name = String(msg.name || "אורח").trim().slice(0, 20) || "אורח";
       const tableName = String(msg.tableName || `שולחן ${nextTableId}`).trim().slice(0, 30);
 
-      const finalRoomCode = generateRoomCode();
+      let finalRoomCode = generateRoomCode();
       while (rooms.has(finalRoomCode)) {
         finalRoomCode = generateRoomCode();
-      }
+}
 
       const id = makePlayerId();
       ws._playerId = id;
