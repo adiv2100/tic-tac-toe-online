@@ -1,6 +1,6 @@
 // @ts-nocheck
 // ========== תצורת שרת ==========
-const USE_LOCAL_SERVER = true;  // 👈 תשנה ל- false כשרוצה לעלות ל-Railway
+const USE_LOCAL_SERVER = false;  // 👈 תשנה ל- false כשרוצה לעלות ל-Railway
 const LOCAL_WS_URL = "ws://localhost:3000";
 
 function getWebSocketUrl() {
