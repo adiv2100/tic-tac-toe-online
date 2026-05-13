@@ -47,7 +47,9 @@ function broadcastLobby() {
     playersCount: t.players.length,
     maxPlayers: t.maxPlayers,
     status: t.status,
-    hostName: t.players[0]?.name || "?"
+    hostName: t.players[0]?.name || "?",
+    roomCode: t.roomCode,
+    players: t.players.map(p => ({ name: p.name, symbol: p.symbol, connected: p.connected !== false }))
   }));
 
   const payload = JSON.stringify({ type: "lobby_update", tables: lobbyData });
@@ -62,17 +64,18 @@ function roomState(roomCode) {
   const room = rooms.get(roomCode);
   if (!room) return null;
 
-  const players = [...room.players.values()].map(p => ({
+  const players = getAllRoomPlayers(room).map(p => ({
     id: p.id,
     name: p.name,
-    symbol: p.symbol
+    symbol: p.symbol,
+    connected: p.connected !== false
   }));
 
   return {
     type: "state",
     roomCode,
     players,
-    board: room.board,
+    board: [...room.board],
     turn: room.turn,
     winner: room.winner,
     chat: room.chat || [],
@@ -81,7 +84,7 @@ function roomState(roomCode) {
 }
 
 function makePlayerId() {
-  return Math.random().toString(36).slice(2, 10);
+  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
 
 function generateRoomCode() {
@@ -113,64 +116,181 @@ function addChatMessage(roomCode, sender, text, type = "user") {
   return message;
 }
 
-function cleanupSocket(ws) {
+
+function getAllRoomPlayers(room) {
+  const active = [...room.players.values()].map(p => ({ ...p, connected: true }));
+  const disconnected = Array.isArray(room.disconnectedPlayers)
+    ? room.disconnectedPlayers.map(p => ({ ...p, connected: false }))
+    : [];
+  return [...active, ...disconnected];
+}
+
+function getRoomPlayerCount(room) {
+  return getAllRoomPlayers(room).length;
+}
+
+function updateLobbyPlayerConnection(room, playerId, ws, connected) {
+  if (!room || !room.lobbyTableId) return;
+  const table = lobbyTables.get(room.lobbyTableId);
+  if (!table) return;
+  const player = table.players.find(p => p.id === playerId);
+  if (player) {
+    player.ws = ws || null;
+    player.connected = connected;
+  }
+  table.playersCount = table.players.length;
+  table.status = table.players.length >= table.maxPlayers ? "playing" : "waiting";
+}
+
+function removePlayerEverywhere(ws) {
   for (const [tableId, table] of lobbyTables.entries()) {
     const idx = table.players.findIndex(p => p.ws === ws);
     if (idx !== -1) {
       table.players.splice(idx, 1);
-      if (table.players.length === 0) {
-        lobbyTables.delete(tableId);
-        for (const [code, room] of rooms.entries()) {
-          if (room.lobbyTableId === tableId) {
-            rooms.delete(code);
-            break;
-          }
-        }
-      } else {
-        table.status = table.players.length >= table.maxPlayers ? "playing" : "waiting";
-      }
-      broadcastLobby();
-      break;
+      if (table.players.length === 0) lobbyTables.delete(tableId);
+      else table.status = table.players.length >= table.maxPlayers ? "playing" : "waiting";
     }
   }
 
   for (const [code, room] of rooms.entries()) {
     if (room.players.has(ws)) {
       const leaver = room.players.get(ws);
-      console.log(`[离开] 👋 ${leaver?.name} עזב את החדר ${code}`);
-
       room.players.delete(ws);
-
-      if (room.players.size === 0) {
-        rooms.delete(code);
-        continue;
+      if (Array.isArray(room.disconnectedPlayers)) {
+        room.disconnectedPlayers = room.disconnectedPlayers.filter(p => p.id !== leaver.id);
       }
-
-      if (room.players.size === 1) {
-        const onlyWs = [...room.players.keys()][0];
-        const onlyPlayer = room.players.get(onlyWs);
-        if (onlyPlayer) {
-          onlyPlayer.symbol = "X";
-        }
-      }
-
-      room.board = makeEmptyBoard();
-      room.turn = "X";
-      room.winner = null;
-      addChatMessage(code, null, `שחקן התנתק (${leaver?.name || ""})`, "system");
-      broadcast(code, roomState(code));
+      if (getRoomPlayerCount(room) === 0) rooms.delete(code);
+      else addChatMessage(code, null, `${leaver?.name || "שחקן"} יצא מהשולחן`, "system");
     }
+  }
+  broadcastLobby();
+}
+
+function cleanupSocket(ws) {
+  console.log(`[CLEANUP] 🧹 מסמן ניתוק זמני...`);
+
+  for (const [code, room] of rooms.entries()) {
+    if (!room.players.has(ws)) continue;
+
+    const leaver = room.players.get(ws);
+    room.players.delete(ws);
+    if (!room.disconnectedPlayers) room.disconnectedPlayers = [];
+
+    const existing = room.disconnectedPlayers.find(p => p.id === leaver.id);
+    if (existing) {
+      existing.name = leaver.name;
+      existing.symbol = leaver.symbol;
+      existing.disconnectedAt = Date.now();
+    } else {
+      room.disconnectedPlayers.push({
+        id: leaver.id,
+        name: leaver.name,
+        symbol: leaver.symbol,
+        disconnectedAt: Date.now()
+      });
+    }
+
+    updateLobbyPlayerConnection(room, leaver.id, null, false);
+    addChatMessage(code, null, `${leaver?.name || "שחקן"} התנתק זמנית - ניתן לרענן ולחזור למשחק`, "system");
+    broadcast(code, roomState(code));
+    broadcastLobby();
+
+    setTimeout(() => {
+      const currentRoom = rooms.get(code);
+      if (!currentRoom || !currentRoom.disconnectedPlayers) return;
+      const before = currentRoom.disconnectedPlayers.length;
+      currentRoom.disconnectedPlayers = currentRoom.disconnectedPlayers.filter(p => p.id !== leaver.id);
+      if (currentRoom.disconnectedPlayers.length !== before) {
+        if (currentRoom.lobbyTableId) {
+          const table = lobbyTables.get(currentRoom.lobbyTableId);
+          if (table) {
+            table.players = table.players.filter(p => p.id !== leaver.id);
+            if (table.players.length === 0) lobbyTables.delete(table.id);
+            else table.status = table.players.length >= table.maxPlayers ? "playing" : "waiting";
+          }
+        }
+        if (getRoomPlayerCount(currentRoom) === 0) rooms.delete(code);
+        else broadcast(code, roomState(code));
+        broadcastLobby();
+        console.log(`[CLEANUP] ⏱️ שחקן ${leaver?.name || "?"} לא חזר בזמן ונוקה מחדר ${code}`);
+      }
+    }, 5 * 60 * 1000);
   }
 }
 
 wss.on("connection", (ws) => {
   ws.subscribedToLobby = false;
+  ws.playerId = null;
+  ws.roomCode = null;
+  ws.lobbyTableId = null;
+
+  console.log(`[CONNECTION] 🔌 התחברות חדשה, סה"כ: ${wss.clients.size}`);
 
   ws.on("message", (raw) => {
     let msg;
     try {
       msg = JSON.parse(raw.toString());
     } catch {
+      return;
+    }
+
+    if (msg.type === "rejoin") {
+      const roomCode = String(msg.roomCode || "").trim().toUpperCase();
+      const playerId = String(msg.playerId || "").trim();
+      const name = String(msg.name || "אורח").trim().slice(0, 20) || "אורח";
+      const room = rooms.get(roomCode);
+
+      if (!room || !playerId) {
+        ws.send(JSON.stringify({ type: "rejoin_failed", message: "לא נמצא משחק לשחזור" }));
+        return;
+      }
+
+      const activeSame = [...room.players.entries()].find(([, p]) => p.id === playerId);
+      let player = null;
+      if (activeSame) {
+        const [oldWs, oldPlayer] = activeSame;
+        try { if (oldWs !== ws) oldWs.close(); } catch { }
+        room.players.delete(oldWs);
+        player = oldPlayer;
+      } else if (Array.isArray(room.disconnectedPlayers)) {
+        const idx = room.disconnectedPlayers.findIndex(p => p.id === playerId);
+        if (idx !== -1) {
+          player = room.disconnectedPlayers.splice(idx, 1)[0];
+        }
+      }
+
+      if (!player) {
+        ws.send(JSON.stringify({ type: "rejoin_failed", message: "לא נמצא שחקן לשחזור" }));
+        return;
+      }
+
+      player.name = player.name || name;
+      ws.playerId = player.id;
+      ws.roomCode = roomCode;
+      ws.lobbyTableId = room.lobbyTableId || null;
+      room.players.set(ws, { id: player.id, name: player.name, symbol: player.symbol });
+      updateLobbyPlayerConnection(room, player.id, ws, true);
+
+      ws.send(JSON.stringify({
+        type: "joined",
+        id: player.id,
+        roomCode,
+        symbol: player.symbol,
+        lobbyTableId: room.lobbyTableId || null,
+        restored: true
+      }));
+      addChatMessage(roomCode, null, `${player.name} התחבר מחדש`, "system");
+      broadcast(roomCode, roomState(roomCode));
+      broadcastLobby();
+      return;
+    }
+
+    if (msg.type === "get_state") {
+      const roomCode = String(msg.roomCode || "").trim().toUpperCase();
+      if (roomCode && rooms.has(roomCode)) {
+        const state = roomState(roomCode);
+        if (state) ws.send(JSON.stringify(state));
+      }
       return;
     }
 
@@ -188,10 +308,10 @@ wss.on("connection", (ws) => {
       let finalRoomCode = generateRoomCode();
       while (rooms.has(finalRoomCode)) {
         finalRoomCode = generateRoomCode();
-}
+      }
 
       const id = makePlayerId();
-      ws._playerId = id;
+      ws.playerId = id;
 
       const room = {
         players: new Map(),
@@ -199,7 +319,9 @@ wss.on("connection", (ws) => {
         turn: "X",
         winner: null,
         chat: [],
-        lobbyTableId: String(nextTableId)
+        disconnectedPlayers: [],
+        lobbyTableId: String(nextTableId),
+        createdAt: Date.now()
       };
       rooms.set(finalRoomCode, room);
       room.players.set(ws, { id, name, symbol: "X" });
@@ -208,7 +330,7 @@ wss.on("connection", (ws) => {
         id: String(nextTableId++),
         name: tableName,
         maxPlayers: 2,
-        players: [{ ws, name, id, symbol: "X" }],
+        players: [{ ws, name, id, symbol: "X", connected: true }],
         status: "waiting",
         roomCode: finalRoomCode,
         createdAt: Date.now()
@@ -218,7 +340,7 @@ wss.on("connection", (ws) => {
       ws.lobbyTableId = table.id;
       ws.roomCode = finalRoomCode;
 
-      console.log(`[创建] 🎮 ${name} יצר שולחן "${tableName}" (${table.id})`);
+      console.log(`[创建] 🎮 ${name} יצר שולחן "${tableName}" (${table.id}) קוד: ${finalRoomCode}`);
 
       ws.send(JSON.stringify({
         type: "joined",
@@ -229,7 +351,7 @@ wss.on("connection", (ws) => {
       }));
 
       addChatMessage(finalRoomCode, null, `${name} יצר את השולחן "${tableName}"`, "system");
-      addChatMessage(finalRoomCode, null, "ברוכים הבאים! אפשר לדבר בצ'אט", "system");
+      addChatMessage(finalRoomCode, null, "ברוכים הבאים! מחכים לשחקן נוסף...", "system");
       broadcast(finalRoomCode, roomState(finalRoomCode));
       broadcastLobby();
       return;
@@ -244,28 +366,40 @@ wss.on("connection", (ws) => {
         ws.send(JSON.stringify({ type: "error", message: "שולחן לא קיים" }));
         return;
       }
+      
       if (table.players.length >= table.maxPlayers) {
         ws.send(JSON.stringify({ type: "error", message: "השולחן מלא" }));
         return;
       }
 
       const roomCode = table.roomCode;
-      const room = rooms.get(roomCode);
+      let room = rooms.get(roomCode);
+      
       if (!room) {
-        ws.send(JSON.stringify({ type: "error", message: "שגיאה פנימית" }));
+        console.log(`[ERROR] חדר ${roomCode} לא קיים לשולחן ${tableId}`);
+        ws.send(JSON.stringify({ type: "error", message: "שגיאת מערכת" }));
+        return;
+      }
+
+      if (getRoomPlayerCount(room) >= 2) {
+        ws.send(JSON.stringify({ type: "error", message: "החדר מלא" }));
         return;
       }
 
       const id = makePlayerId();
-      ws._playerId = id;
-      let symbol = "X";
-      if (room.players.size === 1) {
-        const existing = [...room.players.values()][0];
+      ws.playerId = id;
+      
+      let symbol = "O";
+      if (getRoomPlayerCount(room) === 0) {
+        symbol = "X";
+      } else {
+        const existing = getAllRoomPlayers(room)[0];
         symbol = (existing.symbol === "X") ? "O" : "X";
       }
+      
       room.players.set(ws, { id, name, symbol });
-
-      table.players.push({ ws, name, id, symbol });
+      table.players.push({ ws, name, id, symbol, connected: true });
+      
       if (table.players.length >= table.maxPlayers) {
         table.status = "playing";
       }
@@ -273,7 +407,8 @@ wss.on("connection", (ws) => {
       ws.lobbyTableId = tableId;
       ws.roomCode = roomCode;
 
-      console.log(`[加入] ✅ ${name} הצטרף לשולחן ${tableId} (${symbol})`);
+      console.log(`[加入] ✅ ${name} הצטרף לשולחן ${tableId} (${symbol}) קוד: ${roomCode}`);
+      console.log(`[加入] כעת ${room.players.size} שחקנים בחדר`);
 
       ws.send(JSON.stringify({
         type: "joined",
@@ -284,7 +419,10 @@ wss.on("connection", (ws) => {
       }));
 
       addChatMessage(roomCode, null, `${name} הצטרף (${symbol})`, "system");
-      broadcast(roomCode, roomState(roomCode));
+      
+      // שליחת המצב המלא לשני השחקנים
+      const fullState = roomState(roomCode);
+      broadcast(roomCode, fullState);
       broadcastLobby();
       return;
     }
@@ -304,26 +442,34 @@ wss.on("connection", (ws) => {
         return;
       }
 
-      if (room.players.size >= 2) {
+      if (getRoomPlayerCount(room) >= 2) {
         ws.send(JSON.stringify({ type: "error", message: "החדר מלא" }));
         return;
       }
 
       const id = makePlayerId();
-      ws._playerId = id;
-      let symbol = "X";
-      if (room.players.size === 1) {
-        const existing = [...room.players.values()][0];
+      ws.playerId = id;
+      
+      let symbol = "O";
+      if (getRoomPlayerCount(room) === 0) {
+        symbol = "X";
+      } else {
+        const existing = getAllRoomPlayers(room)[0];
         symbol = (existing.symbol === "X") ? "O" : "X";
       }
+      
       room.players.set(ws, { id, name, symbol });
+      ws.roomCode = roomCode;
 
       console.log(`[加入] ✅ ${name} הצטרף לחדר ${roomCode} (${symbol})`);
+      console.log(`[加入] כעת ${room.players.size} שחקנים בחדר`);
 
       ws.send(JSON.stringify({ type: "joined", id, roomCode, symbol }));
-
+      
       addChatMessage(roomCode, null, `${name} הצטרף (${symbol})`, "system");
-      broadcast(roomCode, roomState(roomCode));
+      
+      const fullState = roomState(roomCode);
+      broadcast(roomCode, fullState);
       return;
     }
 
@@ -376,13 +522,13 @@ wss.on("connection", (ws) => {
 
       room.board = makeEmptyBoard();
       room.winner = null;
-
-      if (room.players.size === 2) {
-        for (const p of room.players.values()) {
-          p.symbol = (p.symbol === "X") ? "O" : "X";
-        }
-      }
       room.turn = "X";
+      
+      // איפוס סמלים
+      const playersArray = getAllRoomPlayers(room);
+      if (playersArray[0]) playersArray[0].symbol = "X";
+      if (playersArray[1]) playersArray[1].symbol = "O";
+      
       addChatMessage(roomCode, null, `${player?.name} איפס את המשחק`, "system");
       broadcast(roomCode, roomState(roomCode));
 
@@ -420,13 +566,14 @@ wss.on("connection", (ws) => {
     }
 
     if (msg.type === "leave_table") {
-      cleanupSocket(ws);
+      removePlayerEverywhere(ws);
       ws.send(JSON.stringify({ type: "left_table" }));
       return;
     }
   });
 
   ws.on("close", () => {
+    console.log(`[CLOSE] 🔌 חיבור נסגר, סה"כ: ${wss.clients.size}`);
     cleanupSocket(ws);
   });
 
